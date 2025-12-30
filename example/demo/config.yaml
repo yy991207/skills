@@ -2,7 +2,7 @@
 llm:
   provider: "qwen"
   model: "qwen-max"
-  api_key: "sk-56c7427bd02243b5808da837d80ef6af"
+  api_key: ""
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 # Paths

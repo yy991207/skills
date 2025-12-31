@@ -8,30 +8,30 @@ logger = setup_logger(__name__)
 
 class SkillLoader:
     """
-    Progressive skill loader following official Anthropic standards
-    Implements 3-layer loading: Metadata -> Instructions -> Resources
+    渐进式技能加载器，遵循Anthropic官方标准
+    实现3层加载：元数据 -> 指令 -> 资源
     """
     def __init__(self, skills_dir: str):
         self.skills_dir = os.path.abspath(skills_dir)
     
     def load_all_metadata(self) -> List[SkillMetadata]:
         """
-        Layer 1: Load ONLY metadata (name + description) for all skills
-        This should be ~100 tokens per skill
+        第1层：仅加载所有技能的元数据（名称 + 描述）
+        每个技能约100个token
         """
         skills = []
         if not os.path.exists(self.skills_dir):
-            logger.warning(f"Skills directory not found: {self.skills_dir}")
+            logger.warning(f"未找到技能目录: {self.skills_dir}")
             return skills
 
-        # Determine if skills_dir points to 'skills' or parent
+        # 判断skills_dir指向'skills'目录还是其父目录
         if os.path.basename(self.skills_dir) == "skills":
             skills_root = self.skills_dir
         else:
             skills_root = os.path.join(self.skills_dir, "skills")
         
         if not os.path.exists(skills_root):
-            logger.warning(f"Skills root not found: {skills_root}")
+            logger.warning(f"未找到技能根目录: {skills_root}")
             return skills
 
         for entry in os.scandir(skills_root):
@@ -43,19 +43,19 @@ class SkillLoader:
                         metadata["path"] = entry.path
                         skills.append(metadata)
         
-        logger.info(f"Loaded metadata for {len(skills)} skills")
+        logger.info(f"已加载 {len(skills)} 个技能的元数据")
         return skills
 
     def _sanitize_string(self, text: str) -> str:
-        """Remove surrogate characters that cause UTF-8 encoding issues"""
+        """移除导致UTF-8编码问题的代理字符"""
         if not text:
             return ""
-        # 'surrogatepass' would keep them, but HTTP libs usually fail. 
-        # We'll use ignore/replace to be safe.
+        # 'surrogatepass'会保留这些字符，但HTTP库通常会失败
+        # 我们使用ignore/replace来确保安全
         return text.encode('utf-8', 'ignore').decode('utf-8')
 
     def _extract_metadata(self, skill_file: str) -> Optional[SkillMetadata]:
-        """Extract ONLY frontmatter metadata (NOT full body)"""
+        """仅提取frontmatter元数据（不包含完整内容）"""
         try:
             with open(skill_file, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
@@ -67,15 +67,15 @@ class SkillLoader:
                         return {
                             "name": self._sanitize_string(str(meta_yaml.get("name", "unknown"))),
                             "description": self._sanitize_string(str(meta_yaml.get("description", ""))),
-                            "path": ""  # Will be set by caller
+                            "path": ""  # 将由调用者设置
                         }
         except Exception as e:
-            logger.error(f"Error extracting metadata from {skill_file}: {e}")
+            logger.error(f"从{skill_file}提取元数据时出错: {e}")
         return None
 
     def load_full_instructions(self, skill_path: str) -> str:
         """
-        Layer 2: Load complete SKILL.md body and any MANDATORY referenced docs
+        第2层：加载完整的SKILL.md主体内容以及所有强制引用的文档
         """
         logger.info("\n" + "="*20 + " [LAYER 2: INSTRUCTION LOADING] " + "="*20)
         logger.info(f"📁 技能根目录: {skill_path}")
@@ -94,8 +94,8 @@ class SkillLoader:
         sanitized_content = self._sanitize_string(content)
         logger.info(f"   ∟ 主指令读取完成 ({len(sanitized_content)} 字符)")
         
-        # Proactively load mandatory referenced files (Layer 3 items mentioned as Mandatory)
-        # Search for pattern: Read [`filename.md`]
+        # 主动加载强制引用的文件（第3层中标记为Mandatory的项目）
+        # 搜索模式：Read [`filename.md`]
         import re
         mandatory_docs = re.findall(r"Read \[`(.*\.md)`\]", sanitized_content)
         
@@ -137,14 +137,14 @@ class SkillLoader:
 
     def load_resource(self, skill_path: str, resource_path: str) -> str:
         """
-        Layer 3: Load specific resource file (scripts/, references/, assets/)
-        Only called when explicitly needed by SKILL.md
+        第3层：加载特定资源文件（scripts/、references/、assets/）
+        仅在SKILL.md明确需要时调用
         """
         full_path = os.path.join(skill_path, resource_path)
         if os.path.exists(full_path):
             with open(full_path, "r", encoding="utf-8") as f:
                 content = f.read()
-                logger.info(f"Loaded resource: {resource_path}")
+                logger.info(f"已加载资源: {resource_path}")
                 return content
-        logger.warning(f"Resource not found: {resource_path}")
+        logger.warning(f"未找到资源: {resource_path}")
         return ""

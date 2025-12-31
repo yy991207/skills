@@ -1,7 +1,6 @@
 import sys
 import os
 
-# Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from graph.workflow import workflow, skill_loader
@@ -11,14 +10,15 @@ logger = setup_logger(__name__)
 
 def main():
     print("=== Agent Skills Demo (Official Standards) ===")
-    print("Progressive Disclosure: Metadata → Instructions → Resources")
+    print("Progressive Disclosure: Metadata -> Instructions -> Resources")
     print("Discovery: Pure LLM Reasoning (No Keywords)")
     print("\nType 'exit' or 'quit' to quit\n")
     
-    # Layer 1: Load ALL skill metadata at startup (~100 tokens each)
-    logger.info("[STARTUP] Loading skill metadata...")
+    logger.info("[启动] 正在加载技能元数据...")
     all_skills_metadata = skill_loader.load_all_metadata()
-    logger.info(f"[STARTUP] Loaded metadata for {len(all_skills_metadata)} skills\n")
+    logger.info(f"[启动] 已加载 {len(all_skills_metadata)} 个技能的元数据\n")
+    
+    conversation_history = []
     
     while True:
         user_input = input("Enter your task: ").strip()
@@ -31,19 +31,19 @@ def main():
             print("Please enter a valid task\n")
             continue
         
-        # Initialize state with metadata-only
         initial_state = {
             "task": user_input,
-            "available_skills": all_skills_metadata,  # Layer 1 only
+            "available_skills": all_skills_metadata,
             "selected_skill": None,
             "messages": [],
-            "result": ""
+            "result": "",
+            "conversation_history": conversation_history,
+            "is_continue": True
         }
         
         print(f"\n\033[1m[🔍 Processing Task...]\033[0m")
         final_output = workflow.invoke(initial_state)
         
-        # Clear separation for final result
         print("\n" + "━" * 65)
         print("\033[1;92m✨ AGENT RESPONSE\033[0m")
         print("━" * 65)
@@ -58,6 +58,8 @@ def main():
         print(f"\n\033[1mFinal Result:\033[0m")
         print(f"{final_output.get('result')}")
         print("━" * 65 + "\n")
+        
+        conversation_history = final_output.get('conversation_history', [])
 
 if __name__ == "__main__":
     main()

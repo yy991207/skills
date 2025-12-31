@@ -8,8 +8,8 @@ logger = setup_logger(__name__)
 
 class SkillDiscovery:
     """
-    LLM-based skill discovery following official Anthropic standards
-    Uses pure LLM reasoning, NOT keyword matching or algorithmic routing
+    基于LLM的技能发现，遵循Anthropic官方标准
+    使用纯LLM推理，不使用关键词匹配或算法路由
     """
     def __init__(self, llm: ChatOpenAI):
         self.llm = llm
@@ -19,16 +19,16 @@ class SkillDiscovery:
 
     def discover_skill(self, task: str, available_skills: List[SkillMetadata]) -> Optional[SkillMetadata]:
         """
-        Use LLM to select the most appropriate skill based on metadata ONLY
+        使用LLM基于元数据选择最合适的技能
         """
         if not available_skills:
-            logger.warning("No skills available for discovery")
+            logger.warning("没有可用的技能用于发现")
             return None
         
-        # Sanitize task input
+        # 清理任务输入
         task = self._sanitize(task)
         
-        # Build metadata-only context (~100 tokens per skill)
+        # 构建仅包含元数据的上下文（每个技能约100个token）
         skill_list = "\n".join([
             f"- **{skill['name']}**: {self._sanitize(skill['description'][:150])}..."
             for skill in available_skills
@@ -62,7 +62,7 @@ Your response must be a single word - the skill name or "NONE"."""
             if selected_name == "none":
                 return None
             
-            # Find matching skill - exact or substring
+            # 查找匹配的技能 - 精确匹配或子字符串匹配
             match = next((s for s in available_skills if s["name"].lower() == selected_name or selected_name in s["name"].lower()), None)
             
             if match:
@@ -72,5 +72,5 @@ Your response must be a single word - the skill name or "NONE"."""
             return match
             
         except Exception as e:
-            logger.error(f"[DISCOVERY] LLM call failed: {e}")
+            logger.error(f"[发现] LLM调用失败: {e}")
             return None

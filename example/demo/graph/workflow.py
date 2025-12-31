@@ -12,12 +12,10 @@ import re
 
 logger = setup_logger(__name__)
 
-# Load configuration
 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.yaml")
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
-# Initialize components
 llm = ChatOpenAI(
     model=config["llm"]["model"],
     openai_api_key=config["llm"]["api_key"],
@@ -29,10 +27,7 @@ skill_discovery = SkillDiscovery(llm)
 skill_executor = SkillExecutor()
 
 def discover_node(state: AgentState):
-    """
-    Node 1: Skill Discovery using LLM reasoning on metadata ONLY
-    """
-    logger.info("Step 1: Discovering relevant skill based on metadata...")
+    logger.info("步骤1：基于元数据发现相关技能...")
     
     task = state["task"]
     available_skills = state["available_skills"]
@@ -40,24 +35,75 @@ def discover_node(state: AgentState):
     selected_metadata = skill_discovery.discover_skill(task, available_skills)
     
     if selected_metadata:
-        logger.info(f"✓ Found match: {selected_metadata['name']}")
+        logger.info(f"✓ 找到匹配: {selected_metadata['name']}")
         return {"selected_skill": {"name": selected_metadata["name"], 
                                     "description": selected_metadata["description"],
                                     "path": selected_metadata["path"],
                                     "instructions": ""}}
     else:
-        logger.info("✗ No specialized skill required for this task")
+        logger.info("✗ 此任务不需要专业技能")
         return {"selected_skill": None}
 
+def conversation_node(state: AgentState):
+    logger.info("对话节点：处理用户输入...")
+    
+    task = state["task"]
+    conversation_history = state.get("conversation_history", [])
+    
+    conversation_history.append({
+        "role": "user",
+        "content": task
+    })
+    
+    return {"conversation_history": conversation_history}
+
+def interaction_node(state: AgentState):
+    logger.info("交互节点：与skills模块通信...")
+    
+    selected = state.get("selected_skill")
+    task = state.get("task")
+    conversation_history = state.get("conversation_history", [])
+    
+    if not selected:
+        logger.info("未选择技能，使用通用对话")
+        response = "I understand your request. Let me help you with that."
+        conversation_history.append({
+            "role": "assistant",
+            "content": response
+        })
+        return {
+            "result": response,
+            "conversation_history": conversation_history
+        }
+    
+    skill_name = selected.get("name", "unknown")
+    logger.info(f"与技能交互: {skill_name}")
+    
+    response = f"Using {skill_name} skill to process: {task}"
+    conversation_history.append({
+        "role": "assistant",
+        "content": response
+    })
+    
+    return {
+        "result": response,
+        "conversation_history": conversation_history
+    }
+
+def check_continue_node(state: AgentState):
+    logger.info("检查继续节点：确定对话是否应继续...")
+    
+    task = state.get("task", "").lower()
+    is_continue = not any(keyword in task for keyword in ['exit', 'quit', 'bye', '结束', '再见'])
+    
+    return {"is_continue": is_continue}
+
 def load_node(state: AgentState):
-    """
-    Node 2: Load full SKILL.md instructions
-    """
     selected = state.get("selected_skill")
     if not selected:
         return {}
     
-    logger.info(f"Step 2: Activating skill '{selected['name']}' (loading instructions)...")
+    logger.info(f"步骤2：激活技能 '{selected['name']}' （加载指令）...")
     
     skill_path = selected["path"]
     instructions = skill_loader.load_full_instructions(skill_path)
@@ -72,13 +118,9 @@ def load_node(state: AgentState):
     return {"selected_skill": updated_skill}
 
 def execute_node(state: AgentState):
-    """
-    Node 3: Execute using LLM + loaded instructions
-    Includes automatic retry with error feedback
-    """
     MAX_RETRIES = 3
     
-    logger.info("Step 3: Generating execution plan and running code...")
+    logger.info("步骤3：生成执行计划并运行代码...")
     
     selected = state.get("selected_skill")
     task = state.get("task")
@@ -86,43 +128,41 @@ def execute_node(state: AgentState):
     if not selected:
         available = state.get("available_skills", [])
         skill_names = ", ".join([s["name"] for s in available])
-        result = "Using general reasoning (no specialized skill matched)."
+        result = "使用通用推理（未匹配到专业技能）。"
         return {"result": result}
     
     instructions = selected.get("instructions", "")
     skill_path = selected["path"]
     
-    # Initial prompt
     base_prompt = f"""You are a task automation assistant with access to the '{selected['name']}' skill.
 
-=== SKILL INSTRUCTIONS ===
+=== 技能指令 ===
 {instructions}
 
-=== USER TASK ===
+=== 用户任务 ===
 {task}
 
-Generate Python code that accomplishes the task according to the skill instructions.
-IMPORTANT: Output ONLY a Python code block. Do NOT output HTML, CSS, or JavaScript directly.
-If the task requires generating web content, write Python code that creates and saves the file."""
+根据技能指令生成完成任务的Python代码。
+重要：仅输出Python代码块。不要直接输出HTML、CSS或JavaScript。
+如果任务需要生成网页内容，请编写创建并保存文件的Python代码。"""
 
-    logger.info("\n" + "-"*30 + " [EXECUTION PROMPT] " + "-"*30)
-    logger.info(f"Target Skill: {selected['name']}")
-    logger.info(f"Task: {task}")
+    logger.info("\n" + "-"*30 + " [执行提示] " + "-"*30)
+    logger.info(f"目标技能: {selected['name']}")
+    logger.info(f"任务: {task}")
     logger.info("-" * 80)
 
     current_prompt = base_prompt
     last_error = None
     
-    # Detailed log of the full prompt (including instructions)
-    logger.info("\n" + "="*20 + " [FULL LLM PROMPT START] " + "="*20)
+    logger.info("\n" + "="*20 + " [完整LLM提示开始] " + "="*20)
     logger.info(current_prompt)
-    logger.info("="*20 + " [FULL LLM PROMPT END] " + "="*20 + "\n")
+    logger.info("="*20 + " [完整LLM提示结束] " + "="*20 + "\n")
     
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            logger.info(f"\n[Attempt {attempt}/{MAX_RETRIES}] Calling LLM for code generation...")
+            logger.info(f"\n[尝试 {attempt}/{MAX_RETRIES}] 调用LLM生成代码...")
             
-            print(f"\n" + "-"*25 + f" [LLM OUTPUT - Attempt {attempt}] " + "-"*25)
+            print(f"\n" + "-"*25 + f" [LLM输出 - 尝试 {attempt}] " + "-"*25)
             full_content = []
             for chunk in llm.stream([SystemMessage(content=current_prompt)]):
                 content_chunk = chunk.content
@@ -133,15 +173,14 @@ If the task requires generating web content, write Python code that creates and 
             content = "".join(full_content)
             print("\n" + "-" * 80)
             
-            # Extract code block
             code_match = re.search(r"```python\n(.*)```", content, re.DOTALL)
             if not code_match:
                 code_match = re.search(r"```\n(.*)```", content, re.DOTALL)
             
             if not code_match:
-                last_error = "No valid Python code block found in LLM output."
-                logger.warning(f"[Attempt {attempt}] {last_error}")
-                current_prompt = base_prompt + f"\n\n=== PREVIOUS ERROR ===\n{last_error}\nPlease output ONLY a ```python code block."
+                last_error = "LLM输出中未找到有效的Python代码块。"
+                logger.warning(f"[尝试 {attempt}] {last_error}")
+                current_prompt = base_prompt + f"\n\n=== 之前的错误 ===\n{last_error}\n请仅输出```python代码块。"
                 continue
             
             code = code_match.group(1).strip()
@@ -149,11 +188,9 @@ If the task requires generating web content, write Python code that creates and 
             with open(temp_script, "w", encoding="utf-8") as f:
                 f.write(code)
             
-            # Setup environment
             env = os.environ.copy()
             current_pythonpath = env.get("PYTHONPATH", "")
             
-            # Add skill_path and its potential internal subdirectories
             new_paths = [
                 skill_path, 
                 os.path.join(skill_path, "ooxml"), 
@@ -164,15 +201,14 @@ If the task requires generating web content, write Python code that creates and 
             
             env["PYTHONPATH"] = os.pathsep.join(unique_paths + ([current_pythonpath] if current_pythonpath else []))
 
-            # Deep Trace Log for Environment
-            logger.info("\n" + "⚙️  " + "="*15 + " [ENVIRONMENT SETUP] " + "="*15)
-            logger.info(f"Temp Script: {os.path.abspath(temp_script)}")
-            logger.info(f"Injected PYTHONPATH:")
+            logger.info("\n" + "⚙️  " + "="*15 + " [环境设置] " + "="*15)
+            logger.info(f"临时脚本: {os.path.abspath(temp_script)}")
+            logger.info(f"注入的PYTHONPATH:")
             for p in unique_paths:
                 logger.info(f"  - {p}")
             logger.info("="*50 + "\n")
 
-            logger.info(f"🚀 Executing: python {temp_script}")
+            logger.info(f"🚀 执行: python {temp_script}")
             
             import subprocess
             process = subprocess.Popen(
@@ -185,54 +221,69 @@ If the task requires generating web content, write Python code that creates and 
             )
             stdout, stderr = process.communicate()
             
-            logger.info("\n" + "-"*30 + " [EXECUTION RESULT] " + "-"*30)
+            logger.info("\n" + "-"*30 + " [执行结果] " + "-"*30)
             if process.returncode == 0:
-                logger.info("Status: SUCCESS")
-                logger.info(f"Stdout:\n{stdout}")
-                result = f"Success! Output:\n{stdout}"
+                logger.info("状态: 成功")
+                logger.info(f"标准输出:\n{stdout}")
+                result = f"成功！输出:\n{stdout}"
                 logger.info("-" * 80)
                 return {"result": result, "messages": [HumanMessage(content=result)]}
             else:
                 last_error = stderr
-                logger.info(f"Status: FAILED (Attempt {attempt})")
-                logger.info(f"Stderr:\n{stderr}")
+                logger.info(f"状态: 失败 (尝试 {attempt})")
+                logger.info(f"标准错误:\n{stderr}")
                 logger.info("-" * 80)
                 
                 if attempt < MAX_RETRIES:
-                    # Prepare retry prompt with error feedback
                     current_prompt = base_prompt + f"""
 
-=== PREVIOUS CODE FAILED ===
+=== 之前的代码失败 ===
 ```python
 {code}
 ```
 
-=== ERROR MESSAGE ===
+=== 错误信息 ===
 {stderr}
 
-Please fix the code based on the error message above. Output ONLY the corrected Python code block."""
-                    logger.info(f"Retrying with error feedback...")
+请根据上述错误信息修复代码。仅输出修正后的Python代码块。"""
+                    logger.info(f"使用错误反馈重试...")
                     
         except Exception as e:
             last_error = str(e)
-            logger.error(f"[Attempt {attempt}] Exception: {e}")
+            logger.error(f"[尝试 {attempt}] 异常: {e}")
             if attempt < MAX_RETRIES:
-                current_prompt = base_prompt + f"\n\n=== PREVIOUS ERROR ===\n{last_error}\nPlease try again."
+                current_prompt = base_prompt + f"\n\n=== 之前的错误 ===\n{last_error}\n请重试。"
     
-    # All retries exhausted
-    result = f"Failed after {MAX_RETRIES} attempts. Last error:\n{last_error}"
+    result = f"在{MAX_RETRIES}次尝试后失败。最后的错误:\n{last_error}"
     logger.error(result)
     return {"result": result, "messages": [HumanMessage(content=result)]}
 
 
-# Build graph
 builder = StateGraph(AgentState)
 builder.add_node("discover", discover_node)
+builder.add_node("conversation", conversation_node)
+builder.add_node("interaction", interaction_node)
+builder.add_node("check_continue", check_continue_node)
 builder.add_node("load", load_node)
 builder.add_node("execute", execute_node)
 
 builder.set_entry_point("discover")
-builder.add_edge("discover", "load")
+builder.add_edge("discover", "conversation")
+builder.add_edge("conversation", "interaction")
+builder.add_edge("interaction", "check_continue")
+
+def should_continue(state: AgentState):
+    return state.get("is_continue", False)
+
+builder.add_conditional_edges(
+    "check_continue",
+    should_continue,
+    {
+        True: "load",
+        False: END
+    }
+)
+
 builder.add_edge("load", "execute")
 builder.add_edge("execute", END)
 

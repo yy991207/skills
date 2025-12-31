@@ -1,1 +1,1 @@
-# Core package initialization
+# 核心包初始化

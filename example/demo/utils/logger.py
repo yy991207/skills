@@ -1,16 +1,16 @@
 import logging
 import sys
 
-# ANSI Color Codes
-REASONING = "\033[94m" # Blue
-SUCCESS = "\033[92m"   # Green
-WARNING = "\033[93m"   # Yellow
-ERROR = "\033[91m"     # Red
-RESET = "\033[0m"      # Reset
+# ANSI颜色代码
+REASONING = "\033[94m" # 蓝色
+SUCCESS = "\033[92m"   # 绿色
+WARNING = "\033[93m"   # 黄色
+ERROR = "\033[91m"     # 红色
+RESET = "\033[0m"      # 重置
 
 def setup_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logger:
     """
-    Configure and return a logger with consistent formatting and colors
+    配置并返回具有统一格式和颜色的日志记录器
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -28,7 +28,7 @@ def setup_logger(name: str = __name__, level: int = logging.INFO) -> logging.Log
                 return f"{ERROR}{msg}{RESET}"
             elif record.levelno >= logging.WARNING:
                 return f"{WARNING}{msg}{RESET}"
-            # Logic logs (trace)
+            # 逻辑日志（跟踪）
             return f"{REASONING}{msg}{RESET}"
 
     formatter = CustomFormatter('  ⚡ [%(name)s] %(message)s')
